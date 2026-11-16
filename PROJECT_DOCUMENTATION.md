@@ -182,48 +182,91 @@ The structure may be adjusted where necessary, but each file should have a clear
 
 ## 6. Database Design
 
-The initial database will contain two main entities.
+The database schema contains two primary entities: **Slot** and **Booking**, designed for relational integrity, auditability, and concurrency-safe scheduling.
 
-### 6.1 Slot
+### 6.1 Visual Entity Relationship Diagram (ERD)
 
-Represents an appointment slot offered by a clinic provider.
+```mermaid
+erDiagram
+    SLOT ||--o{ BOOKING : "has"
 
-| Field | Type | Description |
-|---|---|---|
-| id | String | Unique slot identifier |
-| provider | String | Name of the healthcare provider |
-| start | DateTime | Appointment start time |
-| end | DateTime | Appointment end time |
+    SLOT {
+        string id PK "Unique slot identifier"
+        string provider "Healthcare provider name"
+        timestamp start "Appointment start time in UTC"
+        timestamp end "Appointment end time in UTC"
+    }
 
-### 6.2 Booking
+    BOOKING {
+        string id PK "Unique booking identifier"
+        string slot_id FK "References slots id"
+        string name "Patient full name"
+        string email "Patient email address lowercase"
+        string status "Status confirmed or cancelled"
+        timestamp created_at "Booking creation timestamp in UTC"
+    }
+```
 
-Represents a patient's appointment booking.
+### 6.2 Slot Entity (`slots` table)
 
-| Field | Type | Description |
-|---|---|---|
-| id | UUID/String | Unique booking identifier |
-| slot_id | String | Reference to the booked slot |
-| name | String | Patient's full name |
-| email | String | Patient's email address |
-| status | String/Enum | confirmed or cancelled |
-| created_at | DateTime | Date and time the booking was created |
+Represents an appointment slot offered by a healthcare provider.
 
-### 6.3 Relationships
+| Field | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `VARCHAR(64)` | `PRIMARY KEY` | Unique slot identifier (e.g. `"s1"`). |
+| `provider` | `VARCHAR(255)` | `NOT NULL` | Name of the healthcare provider. |
+| `start` | `TIMESTAMP WITH TIME ZONE` | `NOT NULL` | Appointment start time in UTC. |
+| `end` | `TIMESTAMP WITH TIME ZONE` | `NOT NULL` | Appointment end time in UTC. |
 
-- One appointment slot can have multiple booking records over time.
-- Only one booking for a slot can have the `confirmed` status at a time.
-- A cancelled booking remains in the database.
-- Cancelling a booking makes the appointment slot available again.
+#### Slot Indexes
+- Primary Key index on `id`.
+- B-tree index on `start ASC` (`idx_slots_start`) to optimize chronological ordering for `GET /slots`.
+- B-tree index on `provider` (`idx_slots_provider`) to accelerate provider filtering.
 
-**Important database rule:**
+### 6.3 Booking Entity (`bookings` table)
 
-Preventing double booking must not depend only on checking availability in Python.
+Represents a patient's reservation of an appointment slot.
 
-The database must enforce the rule as well, so simultaneous requests cannot create two confirmed bookings for the same slot.
+| Field | Type | Constraints | Description |
+|---|---|---|---|
+| `id` | `VARCHAR(64)` | `PRIMARY KEY` | Unique booking identifier (UUID string). |
+| `slot_id` | `VARCHAR(64)` | `NOT NULL, FOREIGN KEY (slots.id)` | Reference to the booked slot. |
+| `name` | `VARCHAR(255)` | `NOT NULL` | Patient's full name (whitespace trimmed). |
+| `email` | `VARCHAR(255)` | `NOT NULL` | Patient's email (normalized to lowercase). |
+| `status` | `VARCHAR(20)` | `NOT NULL, CHECK (status IN ('confirmed', 'cancelled'))` | Reservation status: `'confirmed'` or `'cancelled'`. |
+| `created_at` | `TIMESTAMP WITH TIME ZONE` | `NOT NULL, DEFAULT NOW()` | Timestamp when booking was created. |
 
-With PostgreSQL, a partial unique index on `slot_id` for records whose status is `confirmed` can enforce this rule.
+#### Booking Indexes and Status Enforcement
+- Primary Key index on `id`.
+- Foreign key index on `slot_id` (`idx_bookings_slot_id`).
+- Check Constraint: `CHECK (status IN ('confirmed', 'cancelled'))` enforcing valid lifecycle states.
+- Partial Unique Index (`uq_confirmed_slot_booking`) on `slot_id` WHERE `status = 'confirmed'`.
+- Index on `email` (`idx_bookings_email`) for patient lookup and rate limiting.
 
-This also allows a patient to cancel a booking and another patient to book that slot later.
+### 6.4 Entity Simplicity
+- Only `Slot` and `Booking` entities exist; no extraneous `Patient`, `User`, or `Clinic` tables are introduced.
+
+### 6.5 Relational Integrity and Historical Records
+
+- **1-to-Many Relationship:** One slot can have multiple booking records over its lifetime.
+- **Historical Records:** When a patient cancels an appointment, the booking row is not deleted; its status is updated from 'confirmed' to 'cancelled'. This preserves a historical record of past reservations while freeing the slot for other patients. These records are historical rather than strictly immutable, as their status changes upon cancellation and rows can be cleared during a /reset operation.
+- **Slot Reusability:** When a booking is cancelled, the slot becomes available again for other patients to book.
+
+### 6.6 Concurrency and Double-Booking Prevention
+
+Application-level availability checks (`if slot.is_available:`) are subject to race conditions under concurrent requests. If two patients attempt to book the same slot at the same millisecond, both requests might read the slot as available and attempt to insert confirmed bookings.
+
+To guarantee that duplicate bookings cannot occur even during simultaneous requests, the database enforces uniqueness using a **PostgreSQL Partial Unique Index**:
+
+```sql
+CREATE UNIQUE INDEX uq_confirmed_slot_booking
+ON bookings (slot_id)
+WHERE status = 'confirmed';
+```
+
+- Only rows with `status = 'confirmed'` are tracked by this unique index.
+- Multiple historical rows with `status = 'cancelled'` for the same `slot_id` are permitted.
+- If two transactions attempt to insert a `confirmed` booking for the same `slot_id` concurrently, PostgreSQL serializes the write and forces the second transaction to fail with a unique constraint violation, which the application catches and translates into an HTTP `409 Conflict` response.
 
 ---
 

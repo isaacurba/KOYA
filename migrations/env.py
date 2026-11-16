@@ -7,6 +7,7 @@ from alembic import context
 
 from src.config.database import Base
 from src.config.settings import get_settings
+import src.models  # noqa: F401
 
 # Alembic Config object providing access to .ini values
 config = context.config
