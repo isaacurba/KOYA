@@ -7,6 +7,8 @@ from starlette.responses import JSONResponse
 from src.config.settings import get_settings
 
 EXEMPT_PATHS = {
+    "/",
+    "/app",
     "/health",
     "/docs",
     "/redoc",
@@ -18,8 +20,9 @@ EXEMPT_PATHS = {
 class APIKeyAuthMiddleware(BaseHTTPMiddleware):
     """Middleware enforcing API key authentication via the X-API-Key header.
 
-    Exempts public endpoints such as health checks, API docs, and CORS preflight requests.
-    Returns HTTP 401 with {"error": "Invalid or missing API key"} on authentication failure.
+    Protects core assessment API endpoints (/slots, /bookings, /reset).
+    Exempts public endpoints: patient frontend (/ and /app), static assets (/static),
+    frontend BFF routes (/frontend-api), documentation, and health checks.
     """
 
     async def dispatch(self, request: Request, call_next):
@@ -27,9 +30,9 @@ class APIKeyAuthMiddleware(BaseHTTPMiddleware):
         if request.method == "OPTIONS":
             return await call_next(request)
 
-        # Allow exempt documentation and health paths
+        # Allow exempt documentation, health, and patient frontend paths
         path = request.url.path.rstrip("/") or "/"
-        if path in EXEMPT_PATHS or path.startswith(("/docs", "/redoc")):
+        if path in EXEMPT_PATHS or path.startswith(("/docs", "/redoc", "/frontend-api", "/static")):
             return await call_next(request)
 
         api_key = request.headers.get("X-API-Key")

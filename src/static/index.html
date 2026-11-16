@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CarePoint Clinic — Appointment Booking</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220%22%20%220%22%20%22100%22%20%22100%22><text y=%22.9em%22 font-size=%2290%22>🏥</text></svg>">
+</head>
+<body>
+  <header class="navbar">
+    <div class="nav-container">
+      <div class="brand">
+        <span class="brand-icon">🏥</span>
+        <div class="brand-text">
+          <h1>CarePoint Clinic</h1>
+          <p class="tagline">Online Appointment Scheduling</p>
+        </div>
+      </div>
+      <nav class="nav-links">
+        <a href="#slots-section" class="nav-link active">Appointments</a>
+        <a href="#booking-section" class="nav-link">Book Now</a>
+        <a href="#manage-section" class="nav-link">My Booking</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Global Alert Banner -->
+    <div id="global-alert" class="alert hidden" role="alert">
+      <span id="alert-icon" class="alert-icon"></span>
+      <div id="alert-message" class="alert-message"></div>
+      <button id="alert-dismiss" class="alert-close" aria-label="Close notification">&times;</button>
+    </div>
+
+    <!-- Booking Confirmation Display (Shown upon successful booking) -->
+    <section id="confirmation-card" class="card confirmation-card hidden">
+      <div class="confirmation-header">
+        <span class="success-badge-icon">✓</span>
+        <div>
+          <h2>Appointment Confirmed!</h2>
+          <p class="subtitle">Your appointment has been successfully scheduled.</p>
+        </div>
+      </div>
+      <div class="confirmation-details">
+        <div class="detail-row">
+          <span class="detail-label">Booking Reference:</span>
+          <span class="detail-value highlight" id="conf-id">-</span>
+          <button id="btn-copy-id" class="btn-sm btn-outline">Copy</button>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Patient Name:</span>
+          <span class="detail-value" id="conf-name">-</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Email:</span>
+          <span class="detail-value" id="conf-email">-</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Slot ID:</span>
+          <span class="detail-value" id="conf-slot">-</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Status:</span>
+          <span class="badge badge-confirmed" id="conf-status">confirmed</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Booked At:</span>
+          <span class="detail-value" id="conf-created">-</span>
+        </div>
+      </div>
+      <div class="confirmation-actions">
+        <button id="btn-dismiss-confirmation" class="btn btn-secondary">Close</button>
+        <button id="btn-track-booking" class="btn btn-primary">Manage Booking</button>
+      </div>
+    </section>
+
+    <!-- Main Grid: Left = Available Slots, Right = Booking Form -->
+    <div class="layout-grid">
+      <!-- Section 1: Appointment Slots Listing -->
+      <section id="slots-section" class="card slots-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Available Appointment Slots</h2>
+            <p class="subtitle">Select an available appointment slot with our healthcare providers</p>
+          </div>
+          <button id="btn-refresh-slots" class="btn btn-outline" title="Refresh appointment slots">
+            ⟳ Refresh
+          </button>
+        </div>
+
+        <!-- Filter Controls -->
+        <div class="filter-bar">
+          <label for="provider-filter" class="filter-label">Filter by Provider:</label>
+          <select id="provider-filter" class="select-input">
+            <option value="">All Providers</option>
+          </select>
+        </div>
+
+        <!-- Slot Cards Container -->
+        <div id="slots-container" class="slots-grid">
+          <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading clinic appointments...</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section 2: Booking Form -->
+      <section id="booking-section" class="card booking-panel">
+        <div class="panel-header">
+          <div>
+            <h2>Book an Appointment</h2>
+            <p class="subtitle">Complete the details below to reserve your appointment</p>
+          </div>
+        </div>
+
+        <form id="booking-form" class="form" novalidate>
+          <div class="form-group">
+            <label for="slot-select">Selected Slot <span class="required">*</span></label>
+            <select id="slot-select" name="slot_id" class="select-input" required>
+              <option value="">-- Choose an appointment slot --</option>
+            </select>
+            <small class="form-hint">Click "Select Slot" above or pick from this list.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="patient-name">Patient Full Name <span class="required">*</span></label>
+            <input
+              type="text"
+              id="patient-name"
+              name="name"
+              class="text-input"
+              placeholder="e.g. Ada Obi"
+              required
+              autocomplete="name"
+            >
+          </div>
+
+          <div class="form-group">
+            <label for="patient-email">Email Address <span class="required">*</span></label>
+            <input
+              type="email"
+              id="patient-email"
+              name="email"
+              class="text-input"
+              placeholder="e.g. ada@example.com"
+              required
+              autocomplete="email"
+            >
+            <small class="form-hint">Confirmation will be associated with this address.</small>
+          </div>
+
+          <button type="submit" id="btn-submit-booking" class="btn btn-primary btn-block">
+            Confirm & Book Appointment
+          </button>
+        </form>
+      </section>
+    </div>
+
+    <!-- Section 3: Booking Management & Cancellation -->
+    <section id="manage-section" class="card manage-panel">
+      <div class="panel-header">
+        <div>
+          <h2>Manage Existing Booking</h2>
+          <p class="subtitle">Lookup your appointment confirmation and cancel if needed</p>
+        </div>
+      </div>
+
+      <div class="lookup-form">
+        <input
+          type="text"
+          id="lookup-id-input"
+          class="text-input"
+          placeholder="Enter Booking ID (e.g. UUID)"
+          aria-label="Booking Reference ID"
+        >
+        <button id="btn-lookup-booking" class="btn btn-primary">
+          Lookup Booking
+        </button>
+      </div>
+
+      <!-- Result Container for Looked-up Booking -->
+      <div id="booking-result" class="booking-result hidden">
+        <div class="booking-result-card">
+          <div class="result-header">
+            <h3>Booking Information</h3>
+            <span id="result-status-badge" class="badge">Status</span>
+          </div>
+          <div class="result-details">
+            <div class="detail-item">
+              <span class="detail-label">Booking ID:</span>
+              <span id="result-id" class="detail-value highlight">-</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Slot Reference:</span>
+              <span id="result-slot" class="detail-value">-</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Patient Name:</span>
+              <span id="result-name" class="detail-value">-</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Patient Email:</span>
+              <span id="result-email" class="detail-value">-</span>
+            </div>
+            <div class="detail-item">
+              <span class="detail-label">Created At:</span>
+              <span id="result-created" class="detail-value">-</span>
+            </div>
+          </div>
+          <div class="result-actions">
+            <button id="btn-cancel-booking" class="btn btn-danger">
+              Cancel This Booking
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-content">
+      <p>© 2026 CarePoint Clinic API Assessment. Powered by FastAPI & PostgreSQL.</p>
+      <p class="footer-note">Client communication secured through dedicated server-side BFF layer.</p>
+    </div>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
