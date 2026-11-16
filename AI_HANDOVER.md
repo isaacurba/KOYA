@@ -11,7 +11,7 @@ The Clinic Booking API is a layered RESTful application built with **FastAPI**, 
 | **Milestone 1** | Completed | `afa277f` | Project setup, settings, database configuration, models, ERD, and Alembic migrations applied to PostgreSQL |
 | **Milestone 2** | Completed | `f57178d` | Repository layer (`SlotRepository`, `BookingRepository`) with isolated in-memory SQLite test configuration |
 | **Milestone 3** | Completed | `9301e7d` | DTOs, domain exceptions, and service layer (`SlotService`, `BookingService`) |
-| **Milestone 4** | Completed | *(Recorded below)* | Controllers, API key auth middleware, uniform exception handlers, and endpoints |
+| **Milestone 4** | Completed | `ce2dbba` | Controllers, API key auth middleware, uniform exception handlers, and endpoints |
 | **Milestone 5** | Pending | - | Simple frontend interface (HTML, CSS, JavaScript) |
 
 ---
@@ -78,12 +78,13 @@ Total: **58 tests passed** in 2.39s (100% pass rate).
 ## 5. Git Commit Log
 
 ```text
+ce2dbba feat: implement authenticated booking API endpoints
 9301e7d feat: implement booking services and validation
 f57178d feat: implement database models and repositories
 afa277f chore: initialize clinic booking API project
 ```
 
-Milestone 4 Commit Hash: *(Will be updated upon commit)*
+Milestone 4 Commit Hash: `ce2dbba`
 
 ---
 
