@@ -2,7 +2,7 @@
 
 ## 1. Project Overview & Progress Summary
 
-The Clinic Booking API is a layered RESTful application built with **FastAPI**, **SQLAlchemy 2.0**, **PostgreSQL**, and **Pydantic v2**.
+The Clinic Booking API is a robust, layered RESTful application built with **FastAPI**, **SQLAlchemy 2.0**, **PostgreSQL**, and **Pydantic v2**, complete with an interactive single-page patient frontend.
 
 ### Milestones Status
 
@@ -11,51 +11,47 @@ The Clinic Booking API is a layered RESTful application built with **FastAPI**, 
 | **Milestone 1** | Completed | `afa277f` | Project setup, settings, database configuration, models, ERD, and Alembic migrations applied to PostgreSQL |
 | **Milestone 2** | Completed | `f57178d` | Repository layer (`SlotRepository`, `BookingRepository`) with isolated in-memory SQLite test configuration |
 | **Milestone 3** | Completed | `9301e7d` | DTOs, domain exceptions, and service layer (`SlotService`, `BookingService`) |
-| **Milestone 4** | Completed | `ce2dbba` | Controllers, API key auth middleware, uniform exception handlers, and endpoints |
-| **Milestone 5** | Pending | - | Simple frontend interface (HTML, CSS, JavaScript) |
+| **Milestone 4** | Completed | `ce2dbba` | Core assessment controllers, `X-API-Key` auth middleware, uniform exception handlers, and endpoints |
+| **Milestone 5** | Completed | `0d9866f` | Patient frontend interface, BFF layer (`/frontend-api`), static assets, and end-to-end integration |
 
 ---
 
-## 2. Milestone 4: Completed Functionality
+## 2. Milestone 5: Completed Functionality
 
-### 1. API Key Authentication (`src/middleware/api_key_auth.py`)
-- Enforces presence and validity of the `X-API-Key` HTTP header.
-- Compares against `settings.API_KEY`.
-- Returns `HTTP 401 Unauthorized` with JSON payload `{"error": "Invalid or missing API key"}` when the header is absent or invalid.
-- Exempts public paths: `/health`, `/docs`, `/redoc`, `/openapi.json`, and CORS preflight `OPTIONS` requests.
+### 1. Patient Web Interface (`src/static/`)
+- **[index.html](file:///home/isaac/Documents/KOYA/src/static/index.html)**: Clean, semantic, responsive HTML5 layout featuring clinic branding, navigation, global alerts, appointment slots panel, booking form, confirmation banner, and booking management/lookup tool.
+- **[styles.css](file:///home/isaac/Documents/KOYA/src/static/styles.css)**: Modern, professional medical-themed CSS with responsive grid layouts, card styles, status badges (`Available`, `Booked`, `Confirmed`, `Cancelled`), form inputs, and animations.
+- **[app.js](file:///home/isaac/Documents/KOYA/src/static/app.js)**: Vanilla JavaScript application handling state, real-time slot fetching, provider filtering, client-side input validation, appointment booking, clipboard reference copying, booking search/lookup, and booking cancellation.
+- Served directly by FastAPI at `/` and `/app` via `FileResponse` and `StaticFiles` mounted at `/static`.
 
-### 2. Uniform Exception Handlers (`src/exceptions/handlers.py`)
-- Registered on FastAPI to enforce the assessment error contract `{"error": "message"}`:
-  - `ClinicBookingException`: Domain exceptions mapped to their specific HTTP status code (400, 404, 409).
-  - `RequestValidationError`: Formatted to `HTTP 400 Bad Request` with a descriptive message.
-  - `HTTPException`: Standard HTTP exceptions formatted with `{"error": detail}`.
+### 2. Backend-for-Frontend (BFF) Architecture (`src/controllers/frontend_controller.py`)
+- Public frontend-facing endpoints under `/frontend-api`:
+  - `GET /frontend-api/slots`: Retrieves appointment slots in chronological order (`start ASC`) with computed `available: bool`, supporting optional `?provider=` filtering.
+  - `POST /frontend-api/bookings`: Reserves an appointment slot without requiring an API key.
+  - `GET /frontend-api/bookings/{id}`: Looks up booking details by ID.
+  - `DELETE /frontend-api/bookings/{id}`: Cancels a confirmed booking, frees the slot, and preserves history.
+- Direct reuse of the service layer (`SlotService`, `BookingService`) avoiding duplicated business logic.
+- Crucially, **no `/frontend-api/reset` route exists**, preserving reset security.
 
-### 3. Controllers & Endpoints
-- **`SlotController` (`src/controllers/slot_controller.py`)**:
-  - `POST /reset`: Resets schedule transactionally; deletes existing bookings and slots, populates new slots, returns 200 OK.
-  - `GET /slots`: Lists appointment slots ordered by `start ASC`, computes dynamic `available` status, and supports optional `?provider=` filtering.
-- **`BookingController` (`src/controllers/booking_controller.py`)**:
-  - `POST /bookings`: Books an available slot (returns 201 Created); validates inputs, checks slot existence (404), rejects past start times (400), enforces concurrency-safe double-booking prevention via PostgreSQL partial unique index (409).
-  - `GET /bookings/{id}`: Retrieves booking by unique identifier (200 OK) or returns 404 if not found.
-  - `DELETE /bookings/{id}`: Cancels a confirmed booking (200 OK); preserves historical record, makes slot available again, and rejects already cancelled bookings (409 Conflict).
+### 3. API Key Security & Isolation
+- The assessment `API_KEY` is **never exposed** in HTML, CSS, JavaScript, local/session storage, or frontend network calls.
+- Browser requests communicate strictly with `/frontend-api/*`.
+- Core assessment endpoints (`/slots`, `/bookings`, `/reset`) continue to strictly require `X-API-Key`, returning `401 Unauthorized` otherwise.
 
 ---
 
-## 3. Files Created or Modified in Milestone 4
+## 3. Files Created or Modified in Milestone 5
 
 | File | Action | Purpose |
 |---|---|---|
-| `src/middleware/api_key_auth.py` | Created | ASGI middleware enforcing `X-API-Key` header authentication |
-| `src/middleware/__init__.py` | Modified | Exported `APIKeyAuthMiddleware` |
-| `src/exceptions/handlers.py` | Created | Global exception handlers mapping all errors to `{"error": "..."}` |
-| `src/exceptions/__init__.py` | Modified | Exported `register_exception_handlers` |
-| `src/controllers/slot_controller.py` | Created | Endpoints for `POST /reset` and `GET /slots` |
-| `src/controllers/booking_controller.py` | Created | Endpoints for `POST /bookings`, `GET /bookings/{id}`, and `DELETE /bookings/{id}` |
-| `src/controllers/__init__.py` | Modified | Exported slot and booking routers |
-| `src/main.py` | Modified | Mounted auth middleware, registered routers and exception handlers |
-| `tests/conftest.py` | Modified | Added dynamic `auth_headers` fixture matching environment `API_KEY` |
-| `tests/controllers/test_slot_controller.py` | Created | 8 integration tests for slot controller |
-| `tests/controllers/test_booking_controller.py` | Created | 14 integration tests for booking controller |
+| `src/controllers/frontend_controller.py` | Created | BFF routes for patient frontend interaction |
+| `src/controllers/__init__.py` | Modified | Exported `frontend_router` |
+| `src/middleware/api_key_auth.py` | Modified | Exempted `/`, `/app`, `/static`, and `/frontend-api` from API key checks |
+| `src/main.py` | Modified | Mounted static assets, served `/` and `/app`, and included frontend router |
+| `src/static/index.html` | Created | Single-page patient booking web interface |
+| `src/static/styles.css` | Created | Responsive stylesheet |
+| `src/static/app.js` | Created | Client application logic |
+| `tests/controllers/test_frontend_controller.py` | Created | 12 integration tests verifying UI loading, security, BFF routes, and error formats |
 
 ---
 
@@ -66,68 +62,37 @@ Command:
 uv run pytest -v
 ```
 
-Total: **58 tests passed** in 2.39s (100% pass rate).
+Total: **70 tests passed** in 5.29s (100% pass rate).
 
 - Health check: 2 tests
 - Repositories: 15 tests
 - Services: 19 tests
-- Controllers: 22 tests
+- Assessment Controllers: 22 tests
+- Frontend BFF & Static Controllers: 12 tests
 
 ---
 
 ## 5. Git Commit Log
 
 ```text
+0d9866f feat: implement simple clinic booking frontend
 ce2dbba feat: implement authenticated booking API endpoints
 9301e7d feat: implement booking services and validation
 f57178d feat: implement database models and repositories
 afa277f chore: initialize clinic booking API project
 ```
 
-Milestone 4 Commit Hash: `ce2dbba`
-
 ---
 
-## 6. Exact Next Milestone
+## 6. Remaining Assessment Requirements & Next Steps
 
-**Milestone 5: Simple Frontend Implementation**
-- Build a lightweight web client (HTML, CSS, JavaScript) interacting with the backend API.
-- **Slot Listing**: Displays available appointment slots with provider names, dates, times, and clear indicators for unavailable slots.
-- **Provider Filter**: Dropdown or text filter to view slots by healthcare provider.
-- **Booking Form**: Patient name, email address, slot selection, and booking submit button.
-- **Booking Confirmation**: Success message with booking ID, appointment details, patient name, and email.
-- **Cancellation / Management**: Ability to view and cancel existing bookings.
-- **Error Handling**: Friendly alerts for 400 (validation), 404 (not found), and 409 (already booked/cancelled).
+All requirements for **Levels 1, 2, and 3** plus the **Frontend** are completely fulfilled:
+- Level 1: List appointment slots, create booking, retrieve booking by ID.
+- Level 2: API key authentication, booking input validation.
+- Level 3: Concurrency protection (partial unique index), cancel booking.
+- Frontend: Responsive single-page interface with slot listing, provider filter, booking form, confirmation, and cancellation.
 
----
-
-## 7. Ready-to-Use Continuation Prompt
-
-```text
-Continue the KOYA Clinic Booking API project.
-
-Milestones 1 through 4 are complete and all 58 tests pass.
-
-Now implement MILESTONE 5: SIMPLE FRONTEND INTERFACE.
-
-Read AI_HANDOVER.md, PROJECT_DOCUMENTATION.md, and existing endpoints.
-
-1. Build a clean, responsive web interface (HTML5, CSS3, JavaScript):
-   - Place frontend assets under src/static/ (or src/frontend/).
-   - Mount static file serving in src/main.py.
-   - Serve the main page at GET / or GET /app.
-   - Provide secure backend proxying or client headers for the assessment API key.
-
-2. Frontend Capabilities (per Section 10 of PROJECT_DOCUMENTATION.md):
-   - Appointment Listing: Display slots chronologically, provider name, date/time, and clear availability indicators.
-   - Provider Filter: Allow filtering slots by provider.
-   - Booking Form: Form accepting patient name, email, and selected slot, submitting to POST /bookings.
-   - Booking Confirmation: Display booking ID, patient details, and appointment times upon successful booking.
-   - Cancellation UI: Provide cancellation input to cancel a booking via DELETE /bookings/{id}.
-   - Error Handling: Display clean, user-friendly error banners for 400, 404, and 409 responses.
-
-3. Verify end-to-end functionality and ensure existing 58 automated tests continue to pass.
-4. Update AI_HANDOVER.md and commit with:
-   feat: implement simple clinic booking frontend
-5. Report the final status and commit hashes. Do not push to GitHub.
-```
+### Next Milestone: Verification & Deployment Preparation
+- Verify live server startup with Uvicorn.
+- Final live integration test with local PostgreSQL database.
+- Deployment readiness checks (Docker / environment configuration / HTTPS deployment per Section 12 of `PROJECT_DOCUMENTATION.md`).
