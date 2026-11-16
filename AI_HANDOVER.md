@@ -1,217 +1,132 @@
 # AI Handover: Clinic Booking API
 
-## 1. Current State & Completed Functionality
+## 1. Project Overview & Progress Summary
 
-### Milestone 1: Foundation & Migrations (Completed)
-- PostgreSQL database configured and running with SQLAlchemy 2.0.
-- Migration `86a42489381e_create_slots_and_bookings_tables.py` applied to PostgreSQL.
-- Database schema established with `slots` and `bookings` tables, indexes, foreign key constraints, status check constraint, and partial unique index `uq_confirmed_slot_booking`.
+The Clinic Booking API is a layered RESTful application built with **FastAPI**, **SQLAlchemy 2.0**, **PostgreSQL**, and **Pydantic v2**.
 
-### Milestone 2: Repository Layer (Completed)
-- `SlotRepository` (`src/repositories/slot_repository.py`): CRUD, chronological querying, provider filtering, and atomic transactional reset.
-- `BookingRepository` (`src/repositories/booking_repository.py`): CRUD, confirmed booking lookup, status transitions, and slot history retrieval.
-- Isolated test database configured in `tests/conftest.py` with in-memory SQLite (`StaticPool` and `PRAGMA foreign_keys=ON`).
-- 15 unit tests covering repositories.
+### Milestones Status
 
-### Milestone 3: DTOs, Domain Exceptions, and Service Layer (Completed)
-- **DTOs (`src/dtos/`):**
-  - `SlotCreateDTO`: Validates ID, provider, timezone-aware UTC timestamps, and asserts start < end.
-  - `SlotResponseDTO`: Exposes slot data with dynamic boolean `available` status.
-  - `SlotListResponseDTO`: Wraps collection of slots.
-  - `ResetSlotsRequestDTO`: Payload wrapper for batch slot replacements.
-  - `BookingCreateDTO`: Trims whitespace from name and email, lowercases email, and enforces RFC 5322 email regex validation.
-  - `BookingResponseDTO`: Standard output contract for confirmed and cancelled bookings.
-- **Domain Exceptions (`src/exceptions/domain.py`):**
-  - Pure Python domain exceptions decoupled from FastAPI/HTTP:
-    - `SlotNotFound` (404)
-    - `BookingNotFound` (404)
-    - `SlotAlreadyBooked` (409)
-    - `BookingAlreadyCancelled` (409)
-    - `SlotInPast` (400)
-- **SlotService (`src/services/slot_service.py`):**
-  - `list_slots(provider=None)`: Returns slots in chronological order (`start ASC`), dynamically computing availability (`available: False` if any active confirmed booking exists; `available: True` if slots have no bookings or only cancelled bookings).
-  - `reset_slots(slots_data)`: Atomic, transactional deletion of existing bookings and slots, followed by population of new slots.
-- **BookingService (`src/services/booking_service.py`):**
-  - `create_booking(slot_id, name, email)`:
-    1. Validates slot existence (`SlotNotFound` -> 404).
-    2. Rejects slots whose start time has already passed (`SlotInPast` -> 400).
-    3. Performs application-level check for existing confirmed booking (`SlotAlreadyBooked` -> 409).
-    4. Persists booking.
-    5. Safeguarded by database partial unique index `uq_confirmed_slot_booking`: catches `IntegrityError` during concurrent race conditions and translates to `SlotAlreadyBooked` (409), while allowing unexpected database errors to surface.
-  - `get_booking(booking_id)`: Fetches booking by ID or raises `BookingNotFound` (404).
-  - `cancel_booking(booking_id)`: Validates existence (404), rejects already cancelled bookings (`BookingAlreadyCancelled` -> 409), updates status to `'cancelled'`, preserves historical record, and restores slot availability.
-- **Service Tests (`tests/services/`):**
-  - 19 service-level unit tests testing real repository interactions on the isolated SQLite database without mocks.
+| Milestone | Status | Commit Hash | Description |
+|---|---|---|---|
+| **Milestone 1** | Completed | `afa277f` | Project setup, settings, database configuration, models, ERD, and Alembic migrations applied to PostgreSQL |
+| **Milestone 2** | Completed | `f57178d` | Repository layer (`SlotRepository`, `BookingRepository`) with isolated in-memory SQLite test configuration |
+| **Milestone 3** | Completed | `9301e7d` | DTOs, domain exceptions, and service layer (`SlotService`, `BookingService`) |
+| **Milestone 4** | Completed | *(Recorded below)* | Controllers, API key auth middleware, uniform exception handlers, and endpoints |
+| **Milestone 5** | Pending | - | Simple frontend interface (HTML, CSS, JavaScript) |
 
 ---
 
-## 2. Files Created or Modified
+## 2. Milestone 4: Completed Functionality
+
+### 1. API Key Authentication (`src/middleware/api_key_auth.py`)
+- Enforces presence and validity of the `X-API-Key` HTTP header.
+- Compares against `settings.API_KEY`.
+- Returns `HTTP 401 Unauthorized` with JSON payload `{"error": "Invalid or missing API key"}` when the header is absent or invalid.
+- Exempts public paths: `/health`, `/docs`, `/redoc`, `/openapi.json`, and CORS preflight `OPTIONS` requests.
+
+### 2. Uniform Exception Handlers (`src/exceptions/handlers.py`)
+- Registered on FastAPI to enforce the assessment error contract `{"error": "message"}`:
+  - `ClinicBookingException`: Domain exceptions mapped to their specific HTTP status code (400, 404, 409).
+  - `RequestValidationError`: Formatted to `HTTP 400 Bad Request` with a descriptive message.
+  - `HTTPException`: Standard HTTP exceptions formatted with `{"error": detail}`.
+
+### 3. Controllers & Endpoints
+- **`SlotController` (`src/controllers/slot_controller.py`)**:
+  - `POST /reset`: Resets schedule transactionally; deletes existing bookings and slots, populates new slots, returns 200 OK.
+  - `GET /slots`: Lists appointment slots ordered by `start ASC`, computes dynamic `available` status, and supports optional `?provider=` filtering.
+- **`BookingController` (`src/controllers/booking_controller.py`)**:
+  - `POST /bookings`: Books an available slot (returns 201 Created); validates inputs, checks slot existence (404), rejects past start times (400), enforces concurrency-safe double-booking prevention via PostgreSQL partial unique index (409).
+  - `GET /bookings/{id}`: Retrieves booking by unique identifier (200 OK) or returns 404 if not found.
+  - `DELETE /bookings/{id}`: Cancels a confirmed booking (200 OK); preserves historical record, makes slot available again, and rejects already cancelled bookings (409 Conflict).
+
+---
+
+## 3. Files Created or Modified in Milestone 4
 
 | File | Action | Purpose |
 |---|---|---|
-| `src/dtos/slot_dto.py` | Created | Pydantic v2 DTOs for slot creation, listing, response, and reset |
-| `src/dtos/booking_dto.py` | Created | Pydantic v2 DTOs with email regex validation, lowercasing, and whitespace trimming |
-| `src/dtos/__init__.py` | Modified | Exported all slot and booking DTOs |
-| `src/exceptions/domain.py` | Created | Domain exceptions (`SlotNotFound`, `BookingNotFound`, `SlotAlreadyBooked`, `BookingAlreadyCancelled`, `SlotInPast`) |
-| `src/exceptions/__init__.py` | Modified | Exported domain exceptions |
-| `src/services/slot_service.py` | Created | Business logic for slot availability and transactional schedule reset |
-| `src/services/booking_service.py` | Created | Business logic for booking creation, concurrency protection, retrieval, and cancellation |
-| `src/services/__init__.py` | Modified | Exported `SlotService` and `BookingService` |
-| `src/repositories/slot_repository.py` | Modified | Eager load `Slot.bookings` with `selectinload` for efficient availability computation |
-| `tests/services/test_slot_service.py` | Created | 7 tests for slot service behavior |
-| `tests/services/test_booking_service.py` | Created | 12 tests for booking service business rules, concurrency race conditions, and cancellations |
-| `AI_HANDOVER.md` | Modified | Updated milestone status and instructions |
+| `src/middleware/api_key_auth.py` | Created | ASGI middleware enforcing `X-API-Key` header authentication |
+| `src/middleware/__init__.py` | Modified | Exported `APIKeyAuthMiddleware` |
+| `src/exceptions/handlers.py` | Created | Global exception handlers mapping all errors to `{"error": "..."}` |
+| `src/exceptions/__init__.py` | Modified | Exported `register_exception_handlers` |
+| `src/controllers/slot_controller.py` | Created | Endpoints for `POST /reset` and `GET /slots` |
+| `src/controllers/booking_controller.py` | Created | Endpoints for `POST /bookings`, `GET /bookings/{id}`, and `DELETE /bookings/{id}` |
+| `src/controllers/__init__.py` | Modified | Exported slot and booking routers |
+| `src/main.py` | Modified | Mounted auth middleware, registered routers and exception handlers |
+| `tests/conftest.py` | Modified | Added dynamic `auth_headers` fixture matching environment `API_KEY` |
+| `tests/controllers/test_slot_controller.py` | Created | 8 integration tests for slot controller |
+| `tests/controllers/test_booking_controller.py` | Created | 14 integration tests for booking controller |
 
 ---
 
-## 3. Important Implementation Decisions
-
-1. **Decoupled Exceptions**: Domain exceptions in `src/exceptions/domain.py` inherit from a base `ClinicBookingException` and carry default status codes, keeping the service and repository layers completely free of FastAPI/Starlette dependencies.
-2. **Two-Tier Concurrency Safeguard**:
-   - Tier 1: Application-level check (`get_confirmed_by_slot_id`) for early exit under normal conditions.
-   - Tier 2: PostgreSQL partial unique index (`uq_confirmed_slot_booking`) on `bookings (slot_id) WHERE status = 'confirmed'`, catching simultaneous race conditions and raising `IntegrityError` which `BookingService` maps to `SlotAlreadyBooked`.
-3. **No External Email Dependency**: Implemented robust RFC 5322 regex validation in Pydantic v2 validators, avoiding unnecessary third-party dependencies while strictly rejecting malformed emails and stripping whitespace.
-4. **Relationship Eager Loading**: `SlotRepository.list_all` utilizes `selectinload(Slot.bookings)` to avoid N+1 query overhead when evaluating slot availability in memory.
-
----
-
-## 4. Test Suite Execution & Results
+## 4. Test Suite Execution & Verification
 
 Command:
 ```bash
 uv run pytest -v
 ```
 
-Output:
-```text
-tests/repositories/test_booking_repository.py::test_create_and_get_booking PASSED [  2%]
-tests/repositories/test_booking_repository.py::test_get_by_id_not_found PASSED [  5%]
-tests/repositories/test_booking_repository.py::test_get_confirmed_by_slot_id PASSED [  8%]
-tests/repositories/test_booking_repository.py::test_get_confirmed_by_slot_id_ignores_cancelled PASSED [ 11%]
-tests/repositories/test_booking_repository.py::test_update_status PASSED [ 13%]
-tests/repositories/test_booking_repository.py::test_preserving_cancelled_booking_history PASSED [ 16%]
-tests/repositories/test_booking_repository.py::test_constraint_preventing_two_confirmed_bookings_for_same_slot PASSED [ 19%]
-tests/repositories/test_booking_repository.py::test_check_constraint_rejects_invalid_status PASSED [ 22%]
-tests/repositories/test_slot_repository.py::test_create_and_get_slot PASSED [ 25%]
-tests/repositories/test_slot_repository.py::test_get_by_id_not_found PASSED [ 27%]
-tests/repositories/test_slot_repository.py::test_list_all_chronological_order PASSED [ 30%]
-tests/repositories/test_slot_repository.py::test_list_all_filter_by_provider PASSED [ 33%]
-tests/repositories/test_slot_repository.py::test_list_all_empty PASSED   [ 36%]
-tests/repositories/test_slot_repository.py::test_reset_slots PASSED      [ 38%]
-tests/repositories/test_slot_repository.py::test_reset_slots_to_empty PASSED [ 41%]
-tests/services/test_booking_service.py::test_create_booking_success PASSED [ 44%]
-tests/services/test_booking_service.py::test_create_booking_slot_not_found PASSED [ 47%]
-tests/services/test_booking_service.py::test_create_booking_past_slot_rejected PASSED [ 50%]
-tests/services/test_booking_service.py::test_create_booking_duplicate_prevention PASSED [ 52%]
-tests/services/test_booking_service.py::test_invalid_booking_data_validation PASSED [ 55%]
-tests/services/test_booking_service.py::test_get_booking_success PASSED  [ 58%]
-tests/services/test_booking_service.py::test_get_booking_not_found PASSED [ 61%]
-tests/services/test_booking_service.py::test_cancel_booking_success PASSED [ 63%]
-tests/services/test_booking_service.py::test_cancel_booking_not_found PASSED [ 66%]
-tests/services/test_booking_service.py::test_repeated_cancellation_rejected PASSED [ 69%]
-tests/services/test_booking_service.py::test_booking_again_after_cancellation PASSED [ 72%]
-tests/services/test_booking_service.py::test_create_booking_concurrency_race_condition PASSED [ 75%]
-tests/services/test_slot_service.py::test_list_slots_empty PASSED        [ 77%]
-tests/services/test_slot_service.py::test_list_slots_all_available_without_bookings PASSED [ 80%]
-tests/services/test_slot_service.py::test_list_slots_unavailable_when_confirmed_booking_exists PASSED [ 83%]
-tests/services/test_slot_service.py::test_list_slots_cancelled_booking_leaves_slot_available PASSED [ 86%]
-tests/services/test_slot_service.py::test_list_slots_chronological_ordering PASSED [ 88%]
-tests/services/test_slot_service.py::test_list_slots_filter_by_provider PASSED [ 91%]
-tests/services/test_slot_service.py::test_reset_slots_transactional_replacement PASSED [ 94%]
-tests/test_health.py::test_health_check_sync PASSED                      [ 97%]
-tests/test_health.py::test_health_check_async PASSED                     [100%]
+Total: **58 tests passed** in 2.39s (100% pass rate).
 
-============================== 36 passed in 1.70s ==============================
+- Health check: 2 tests
+- Repositories: 15 tests
+- Services: 19 tests
+- Controllers: 22 tests
+
+---
+
+## 5. Git Commit Log
+
+```text
+9301e7d feat: implement booking services and validation
+f57178d feat: implement database models and repositories
+afa277f chore: initialize clinic booking API project
 ```
 
----
-
-## 5. Known Limitations
-
-- Controllers and HTTP routers have not yet been hooked up to FastAPI (planned for Milestone 4).
-- HTTP error translation (`{"error": "message"}`) middleware is ready to be bound to FastAPI in Milestone 4.
+Milestone 4 Commit Hash: *(Will be updated upon commit)*
 
 ---
 
-## 6. Remaining Assessment Requirements
+## 6. Exact Next Milestone
 
-- **Milestone 4: Controllers, Middleware & Endpoints (Levels 1–3)**
-  - API Key authentication middleware / dependency (`X-API-Key`).
-  - Global exception handlers formatting all errors strictly as `{"error": "message"}`.
-  - Endpoints:
-    - `POST /reset`
-    - `GET /slots`
-    - `POST /bookings`
-    - `GET /bookings/{id}`
-    - `DELETE /bookings/{id}`
-  - Integration tests in `tests/controllers/`.
-- **Milestone 5: Simple Frontend (HTML/CSS/JavaScript)**
-  - Slot listing with availability indicators and provider filtering.
-  - Booking form with validation and confirmation display.
-- **Milestone 6: Verification & Deployment Preparation**
+**Milestone 5: Simple Frontend Implementation**
+- Build a lightweight web client (HTML, CSS, JavaScript) interacting with the backend API.
+- **Slot Listing**: Displays available appointment slots with provider names, dates, times, and clear indicators for unavailable slots.
+- **Provider Filter**: Dropdown or text filter to view slots by healthcare provider.
+- **Booking Form**: Patient name, email address, slot selection, and booking submit button.
+- **Booking Confirmation**: Success message with booking ID, appointment details, patient name, and email.
+- **Cancellation / Management**: Ability to view and cancel existing bookings.
+- **Error Handling**: Friendly alerts for 400 (validation), 404 (not found), and 409 (already booked/cancelled).
 
 ---
 
-## 7. Exact Next Milestone
-
-**Milestone 4: Controllers, Authentication Middleware, and HTTP Endpoints**
-- Implement `src/middleware/api_key_auth.py` verifying header `X-API-Key: <key>` against `settings.API_KEY` (rejecting with 401 `{"error": "Invalid or missing API key"}`).
-- Implement `src/exceptions/handlers.py` to register custom exception handlers on FastAPI:
-  - `ClinicBookingException` -> status code with `{"error": exc.message}`
-  - `RequestValidationError` -> 400 with `{"error": ...}`
-  - Standard `HTTPException` -> status code with `{"error": ...}`
-- Implement `src/controllers/slot_controller.py`:
-  - `POST /reset`
-  - `GET /slots`
-- Implement `src/controllers/booking_controller.py`:
-  - `POST /bookings`
-  - `GET /bookings/{id}`
-  - `DELETE /bookings/{id}`
-- Wire routers into `src/main.py`.
-- Write controller integration tests under `tests/controllers/`.
-
----
-
-## 8. Ready-to-Use Continuation Prompt
+## 7. Ready-to-Use Continuation Prompt
 
 ```text
 Continue the KOYA Clinic Booking API project.
 
-Milestones 1, 2, and 3 are complete with 36 passing tests.
+Milestones 1 through 4 are complete and all 58 tests pass.
 
-Now implement MILESTONE 4: CONTROLLERS, AUTHENTICATION MIDDLEWARE, AND ENDPOINTS.
+Now implement MILESTONE 5: SIMPLE FRONTEND INTERFACE.
 
-Read AI_HANDOVER.md, PROJECT_DOCUMENTATION.md, and existing code.
+Read AI_HANDOVER.md, PROJECT_DOCUMENTATION.md, and existing endpoints.
 
-1. Implement API key authentication in src/middleware/api_key_auth.py:
-   - Check request header 'X-API-Key'.
-   - Validate against settings.API_KEY.
-   - Return 401 with {"error": "Invalid or missing API key"} if invalid or missing.
-   - Exempt /health, /docs, /redoc, /openapi.json.
+1. Build a clean, responsive web interface (HTML5, CSS3, JavaScript):
+   - Place frontend assets under src/static/ (or src/frontend/).
+   - Mount static file serving in src/main.py.
+   - Serve the main page at GET / or GET /app.
+   - Provide secure backend proxying or client headers for the assessment API key.
 
-2. Implement uniform error handlers in src/exceptions/handlers.py:
-   - Map ClinicBookingException to JSON {"error": exc.message} with its status code.
-   - Map RequestValidationError to 400 {"error": <formatted message>}.
-   - Map standard HTTPException to its status code {"error": <detail>}.
+2. Frontend Capabilities (per Section 10 of PROJECT_DOCUMENTATION.md):
+   - Appointment Listing: Display slots chronologically, provider name, date/time, and clear availability indicators.
+   - Provider Filter: Allow filtering slots by provider.
+   - Booking Form: Form accepting patient name, email, and selected slot, submitting to POST /bookings.
+   - Booking Confirmation: Display booking ID, patient details, and appointment times upon successful booking.
+   - Cancellation UI: Provide cancellation input to cancel a booking via DELETE /bookings/{id}.
+   - Error Handling: Display clean, user-friendly error banners for 400, 404, and 409 responses.
 
-3. Implement controllers:
-   - src/controllers/slot_controller.py:
-     - POST /reset (Level 1)
-     - GET /slots (Level 1, with optional provider query param)
-   - src/controllers/booking_controller.py:
-     - POST /bookings (Levels 1, 2, 3, returning 201)
-     - GET /bookings/{id} (Level 1)
-     - DELETE /bookings/{id} (Level 3, returning 200 with cancelled booking)
-
-4. Register routers and exception handlers in src/main.py.
-
-5. Create controller integration tests under tests/controllers/:
-   - tests/controllers/test_slot_controller.py
-   - tests/controllers/test_booking_controller.py
-   - Test authentication (valid, missing, invalid key).
-   - Test error response formats strictly match {"error": "..."}.
-   - Test all endpoints and status codes (200, 201, 400, 401, 404, 409).
-
-6. Run the full test suite with uv run pytest -v and verify all pass.
-7. Update AI_HANDOVER.md and stop. Do not commit or push.
+3. Verify end-to-end functionality and ensure existing 58 automated tests continue to pass.
+4. Update AI_HANDOVER.md and commit with:
+   feat: implement simple clinic booking frontend
+5. Report the final status and commit hashes. Do not push to GitHub.
 ```

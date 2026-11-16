@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.config.database import Base, get_db
+from src.config.settings import get_settings
 from src.main import app
 
 # Create an in-memory SQLite database engine for test isolation
@@ -67,3 +68,10 @@ async def async_client(db_session: Session) -> AsyncGenerator[httpx.AsyncClient,
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def auth_headers() -> dict[str, str]:
+    """Header dictionary containing a valid assessment API key."""
+    return {"X-API-Key": get_settings().API_KEY}
+

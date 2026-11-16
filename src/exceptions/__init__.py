@@ -11,6 +11,7 @@ from src.exceptions.domain import (
     SlotNotFound,
     SlotNotFoundError,
 )
+from src.exceptions.handlers import register_exception_handlers
 
 __all__ = [
     "ClinicBookingException",
@@ -24,4 +25,5 @@ __all__ = [
     "BookingAlreadyCancelledError",
     "SlotInPast",
     "SlotInPastError",
+    "register_exception_handlers",
 ]
